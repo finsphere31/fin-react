@@ -20,9 +20,9 @@
     .print-voucher th, .print-voucher td { padding: 1mm !important; }
     .print-voucher .max-w-6xl,
     .print-voucher .max-w-4xl,
-    .print-voucher .max-w-[1100px],
-    .print-voucher .max-w-[1000px],
-    .print-voucher .max-w-[900px] {
+    .print-voucher .max-w-\[1100px\],
+    .print-voucher .max-w-\[1000px\],
+    .print-voucher .max-w-\[900px\] {
       max-width: 100% !important;
       width: 100% !important;
     }
