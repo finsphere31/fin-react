@@ -1,0 +1,6 @@
+{
+  "name": "FinSphere Multi-Tenant",
+  "description": "Multi-tenant finance management system with separate company entities and agent management.",
+  "requestFramePermissions": ["bluetooth"],
+  "majorCapabilities": []
+}
