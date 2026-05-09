@@ -1,0 +1,30 @@
+@import "tailwindcss";
+
+@layer base {
+  @media print {
+    .print-voucher {
+      width: 76mm !important;
+      margin: 0 !important;
+      padding: 2mm !important;
+      box-shadow: none !important;
+      border: none !important;
+    }
+    .print-voucher header, 
+    .print-voucher .header-section {
+      padding: 0 !important;
+      margin-bottom: 2mm !important;
+    }
+    .print-voucher h1 { font-size: 14px !important; }
+    .print-voucher h2 { font-size: 10px !important; }
+    .print-voucher table { font-size: 9px !important; }
+    .print-voucher th, .print-voucher td { padding: 1mm !important; }
+    .print-voucher .max-w-6xl,
+    .print-voucher .max-w-4xl,
+    .print-voucher .max-w-[1100px],
+    .print-voucher .max-w-[1000px],
+    .print-voucher .max-w-[900px] {
+      max-width: 100% !important;
+      width: 100% !important;
+    }
+  }
+}
