@@ -438,10 +438,10 @@ const LoginPage = ({ setUser }) => {
         </form>
 
         <div className="mt-8 pt-6 border-t border-gray-100 text-center">
-          <p className="text-xs text-gray-400 font-medium uppercase tracking-widest">Default Admin Access</p>
+          {/* <p className="text-xs text-gray-400 font-medium uppercase tracking-widest">Default Admin Access</p>
           <div className="mt-2 text-sm text-gray-500 font-mono bg-gray-50 p-2 rounded">
             admin / admin123
-          </div>
+          </div> */}
         </div>
       </Card>
       </motion.div>
