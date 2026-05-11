@@ -1190,7 +1190,7 @@ async function start() {
       }
     });
   } else {
-    const distPath = path.join(__dirname, 'dist');
+    const distPath = path.join(__dirname, '../Frontend/dist');
     app.use(express.static(distPath));
     app.get('*', (req, res) => res.sendFile(path.join(distPath, 'index.html')));
   }
