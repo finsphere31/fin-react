@@ -145,7 +145,6 @@ async function seedAdmin() {
         }
       }
     }
-
     const admin = await User.findOne({ role: 'superadmin' });
     if (!admin) {
       const hashedPassword = await bcrypt.hash('admin123', 10);
