@@ -71,7 +71,7 @@ function cn(...inputs) {
 }
 
 // --- API Service ---
-const API_URL = '/api';
+const API_URL = import.meta.env.VITE_API_URL || 'https://fin-react-bk.onrender.com/api';
 const api = axios.create({ baseURL: API_URL });
 
 api.interceptors.request.use((config) => {
