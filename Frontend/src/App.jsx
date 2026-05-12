@@ -65,6 +65,8 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import LoadingButton from './components/LoadingButton';
+import useLoadingButton from './hooks/useLoadingButton';
 
 function cn(...inputs) {
   return twMerge(clsx(inputs));
@@ -72,7 +74,19 @@ function cn(...inputs) {
 
 // --- API Service ---
 const API_URL = import.meta.env.VITE_API_URL || 'https://fin-react-bk.onrender.com/api';
-const api = axios.create({ baseURL: API_URL });
+const api = axios.create({ baseURL: API_URL, timeout: 15000 });
+const apiCache = new Map();
+
+const cachedApiGet = async (url, config = {}, forceRefresh = false) => {
+  const cacheKey = url + JSON.stringify(config.params || {});
+  if (!forceRefresh && apiCache.has(cacheKey)) {
+    return apiCache.get(cacheKey);
+  }
+
+  const response = await api.get(url, config);
+  apiCache.set(cacheKey, response);
+  return response;
+};
 
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token');
@@ -368,31 +382,23 @@ const LoginPage = ({ setUser }) => {
   const [error, setError] = useState('');
   const navigate = useNavigate();
 
-  const handleLogin = async (e) => {
-    e.preventDefault();
-    setError('');
-    const toastId = toast.loading('Authenticating...');
-    try {
-      const { data } = await api.post('/auth/login', { 
-        username: username.trim().toLowerCase(), 
-        password 
-      });
-      toast.success('Successfully logged in!', { id: toastId });
-      localStorage.setItem('token', data.token);
-      if (data.user) {
-        localStorage.setItem('user', JSON.stringify(data.user));
-      } else {
-        localStorage.removeItem('user');
-      }
-      setUser(data.user || null);
-      navigate(data.user.role === 'superadmin' ? '/admin' : '/dashboard');
-    } catch (err) {
-      console.error('Login error details:', err.response || err);
-      const msg = err.response?.data?.message || 'Login failed. Please check your connection.';
-      toast.error(msg, { id: toastId, duration: 6000 });
-      setError(msg);
-    }
-  };
+ const handleLogin = async () => {
+  setError('');
+  // RETURN the promise so the LoadingButton can await it
+  return api.post('/auth/login', { 
+    username: username.trim().toLowerCase(), 
+    password 
+  }).then(({ data }) => {
+    localStorage.setItem('token', data.token);
+    localStorage.setItem('user', JSON.stringify(data.user));
+    setUser(data.user);
+    navigate(data.user.role === 'superadmin' ? '/admin' : '/dashboard');
+  }).catch(err => {
+    const msg = err.response?.data?.message || 'Login failed.';
+    setError(msg);
+    throw err; // Re-throw so the button stops loading
+  });
+};
 
   const isExpiryError = error && error.toLowerCase().includes('expired');
 
@@ -422,7 +428,7 @@ const LoginPage = ({ setUser }) => {
           )}
         </div>
 
-        <form onSubmit={handleLogin} className="space-y-4">
+        <div className="space-y-4">
           <Input label="Username" placeholder="e.g. admin" value={username} onChange={e => setUsername(e.target.value)} required />
           <Input label="Password" type="password" placeholder="••••••••" value={password} onChange={e => setPassword(e.target.value)} required />
           {error && !isExpiryError && <p className="text-red-500 text-sm font-medium">{error}</p>}
@@ -432,10 +438,16 @@ const LoginPage = ({ setUser }) => {
               <p className="text-slate-400 text-[10px] mt-2 font-bold uppercase tracking-widest">Please contact vendor for renewal</p>
             </div>
           )}
-          <Button type="submit" className={cn("w-full py-3 mt-6", isExpiryError ? "bg-red-600 hover:bg-red-700 shadow-red-100" : "")}>
+          <LoadingButton 
+            onClick={handleLogin}
+            successMessage="Successfully logged in!"
+            errorMessage=""
+            loadingText="Authenticating..."
+            className={cn("w-full py-3 mt-6", isExpiryError ? "bg-red-600 hover:bg-red-700 shadow-red-100" : "")}
+          >
             {isExpiryError ? "RETRY LOGIN" : "Login"}
-          </Button>
-        </form>
+          </LoadingButton>
+        </div>
 
         <div className="mt-8 pt-6 border-t border-gray-100 text-center">
           {/* <p className="text-xs text-gray-400 font-medium uppercase tracking-widest">Default Admin Access</p>
@@ -640,15 +652,10 @@ const SuperAdminDashboard = () => {
     }
   }, [startDate]);
 
-  const handleAddCompany = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-
+  const handleAddCompany = async () => {
     const isDuplicate = companies.some(c => c.name.toLowerCase() === newName.toLowerCase() && c.id !== editId);
     if (isDuplicate) {
-      toast.error('Company name already exists!');
-      setLoading(false);
-      return;
+      throw new Error('Company name already exists!');
     }
 
     const payload = { 
@@ -660,21 +667,15 @@ const SuperAdminDashboard = () => {
       amcAmount,
       amcStatus
     };
-    try {
-      if (editId) {
-        await api.put(`/admin/companies/${editId}`, payload);
-        toast.success('Company updated');
-      } else {
-        await api.post('/admin/companies', payload);
-        toast.success('Company created');
-      }
-      resetForm();
-      fetchCompanies();
-    } catch (err) {
-      toast.error(err.response?.data?.message || 'Error saving company');
-    } finally {
-      setLoading(false);
+    
+    if (editId) {
+      await api.put(`/admin/companies/${editId}`, payload);
+    } else {
+      await api.post('/admin/companies', payload);
     }
+    
+    resetForm();
+    fetchCompanies();
   };
 
   const resetForm = () => {
@@ -743,7 +744,7 @@ const SuperAdminDashboard = () => {
 
       {showAdd && (
         <Card title={editId ? "Update Company Details" : "Register New Company"} className="mb-8 border-2 border-indigo-100">
-          <form onSubmit={handleAddCompany} className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <form onSubmit={(e) => { e.preventDefault(); handleAddCompany(); }} className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <Input label="Company Name" placeholder="e.g. Acme Corp" value={newName} onChange={e => setNewName(e.target.value)} required />
             <Input label="Owner Username" placeholder="admin_acme" value={newUsername} onChange={e => setNewUsername(e.target.value)} required />
             <Input label="Owner Password" type={editId ? "text" : "password"} placeholder={editId ? "Password" : "••••••••"} value={newPassword} onChange={e => setNewPassword(e.target.value)} required={!editId} />
@@ -770,15 +771,15 @@ const SuperAdminDashboard = () => {
 
             <div className="md:col-span-3 flex gap-3 justify-end mt-2">
               <Button type="button" variant="secondary" onClick={resetForm}>Cancel</Button>
-              <Button type="submit" disabled={loading}>
-                {loading ? (
-                  <>
-                    <RefreshCw className="animate-spin" size={16} /> Saving...
-                  </>
-                ) : (
-                  editId ? 'Update Entity' : 'Create Entity'
-                )}
-              </Button>
+              <LoadingButton 
+                type="submit"
+                onClick={handleAddCompany}
+                successMessage={editId ? "Company updated successfully!" : "Company created successfully!"}
+                errorMessage=""
+                loadingText="Saving..."
+              >
+                {editId ? 'Update Entity' : 'Create Entity'}
+              </LoadingButton>
             </div>
           </form>
         </Card>
@@ -890,7 +891,7 @@ const CompanyDashboard = ({ user }) => {
   const [summary, setSummary] = useState(null);
 
   useEffect(() => {
-    api.get('/tenant/summary').then(res => setSummary(res.data));
+    cachedApiGet('/tenant/summary').then(res => setSummary(res.data));
   }, []);
 
   const [showExpiryAlert, setShowExpiryAlert] = useState(false);
@@ -1567,20 +1568,28 @@ const TransactionsPage = ({ user, companyProfile }) => {
       toast.error("Please enter a valid amount");
       return;
     }
-    try {
-      if (editId) {
-        await api.put(`/transactions/${editId}`, formData);
-        toast.success("Transaction updated");
-      } else {
-        await api.post('/transactions', formData);
-        toast.success("Transaction recorded");
-      }
-      resetForm();
-      setShowAdd(false);
-      fetchData();
-    } catch (err) {
-      toast.error(err.response?.data?.message || 'Error processing transaction');
+
+    if (editId) {
+      await api.put(`/transactions/${editId}`, formData);
+      toast.success("Transaction updated");
+    } else {
+      await api.post('/transactions', formData);
+      toast.success("Transaction recorded");
     }
+
+    resetForm();
+    setShowAdd(false);
+    fetchData();
+  };
+
+  const { isLoading: isEntryLoading, handleClick: handleEntryClick } = useLoadingButton({
+    onSubmit: handleEntry,
+    showToast: false,
+  });
+
+  const handleEntrySubmit = async (e) => {
+    e.preventDefault();
+    await handleEntryClick(e);
   };
 
   const isLoanAcc = selectedAcc && (
@@ -1728,7 +1737,7 @@ const TransactionsPage = ({ user, companyProfile }) => {
              </div>
            )}
 
-           <form onSubmit={handleEntry} className="space-y-6">
+           <form onSubmit={handleEntrySubmit} className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                  <div className="space-y-1.5">
                    <label className="text-[11px] font-black uppercase text-slate-500 tracking-wider">Transaction Type</label>
@@ -1798,21 +1807,24 @@ const TransactionsPage = ({ user, companyProfile }) => {
                    onChange={e => setFormData({ ...formData, desc: e.target.value })}
                  />
               </div>
-              <div className="flex items-center gap-3">
-                 <button 
-                   type="submit" 
-                   className="bg-[#2980b9] hover:bg-[#3498db] text-white font-black px-8 py-2.5 rounded shadow-md transition-colors flex items-center gap-2"
-                 >
-                   <Check size={18} /> SAVE
-                 </button>
-                 <button 
-                   type="button"
-                   onClick={() => { setShowAdd(false); setEditId(null); setSelectedAcc(null); }}
-                   className="bg-[#e67e22] hover:bg-[#f39c12] text-white font-black px-8 py-2.5 rounded shadow-md transition-colors flex items-center gap-2"
-                 >
-                   <X size={18} /> CANCEL
-                 </button>
-              </div>
+     <div className="flex items-center gap-3">
+  <LoadingButton
+    onClick={handleEntry} // Pass the main function directly
+    loadingText={editId ? 'Updating...' : 'Saving...'}
+    successMessage={editId ? "Voucher Updated" : "Voucher Saved Successfully"}
+    className="bg-[#2980b9] hover:bg-[#3498db] text-white font-black px-8 py-2.5 rounded shadow-md"
+  >
+    <Check size={18} /> SAVE
+  </LoadingButton>
+  
+  <button 
+    type="button"
+    onClick={() => { setShowAdd(false); setEditId(null); setSelectedAcc(null); }}
+    className="bg-[#e67e22] hover:bg-[#f39c12] text-white font-black px-8 py-2.5 rounded shadow-md transition-colors flex items-center gap-2"
+  >
+    <X size={18} /> CANCEL
+  </button>
+</div>
            </form>
         </Card>
         )
@@ -2138,7 +2150,7 @@ const MasterGroupsPage = () => {
   const [editId, setEditId] = useState(null);
   const [formData, setFormData] = useState({ name: '', type: 'Asset' });
 
-  const fetchData = () => api.get('/groups').then(res => setGroups(res.data));
+  const fetchData = () => cachedApiGet('/groups').then(res => setGroups(res.data));
   useEffect(() => { fetchData(); }, []);
 
   const handleSubmit = async (e) => {
@@ -4786,8 +4798,8 @@ const CustomersPage = () => {
   const [openingDate, setOpeningDate] = useState(new Date().toISOString().split('T')[0]);
   const [voucherNo, setVoucherNo] = useState('');
 
-  const fetchCustomers = () => api.get('/customers').then(res => setCustomers(res.data));
-  const fetchTypes = () => api.get('/account-types').then(res => {
+  const fetchCustomers = () => cachedApiGet('/customers').then(res => setCustomers(res.data));
+  const fetchTypes = () => cachedApiGet('/account-types').then(res => {
     const types = Array.isArray(res.data) ? res.data : [];
     setAccountTypes(types);
     if(types.length > 0) setSelectedType(types[0].name);

@@ -26,7 +26,10 @@ app.use(express.json());
 
 // --- MONGODB CONNECTION ---
 mongoose.set('strictQuery', false);
-mongoose.set('bufferCommands', false); 
+mongoose.set('bufferCommands', false);
+mongoose.set('autoIndex', true);
+
+const tenantInitCache = new Set();
 
 async function connectDB() {
   if (!MONGODB_URI) {
@@ -62,9 +65,9 @@ const userSchema = new mongoose.Schema({
 });
 
 const companySchema = new mongoose.Schema({
-  name: { type: String, required: true },
-  ownerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-  active: { type: Boolean, default: true },
+  name: { type: String, required: true, index: true },
+  ownerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true },
+  active: { type: Boolean, default: true, index: true },
   startDate: String,
   expiryDate: String,
   amcAmount: String,
@@ -73,8 +76,8 @@ const companySchema = new mongoose.Schema({
 }, { timestamps: true });
 
 const customerSchema = new mongoose.Schema({
-  companyId: { type: String, required: true },
-  custNo: { type: String, required: true },
+  companyId: { type: String, required: true, index: true },
+  custNo: { type: String, required: true, index: true },
   name: { type: String, required: true },
   mobile: String,
   address: String,
@@ -113,11 +116,29 @@ const groupSchema = new mongoose.Schema({
 });
 
 const accountTypeSchema = new mongoose.Schema({
-  companyId: { type: String, required: true },
+  companyId: { type: String, required: true, index: true },
   name: String,
   prefix: String,
   group: String
 });
+
+userSchema.index({ username: 1 }, { unique: true, collation: { locale: 'en', strength: 2 } });
+userSchema.index({ companyId: 1 });
+userSchema.index({ role: 1 });
+companySchema.index({ ownerId: 1 });
+companySchema.index({ active: 1 });
+customerSchema.index({ companyId: 1 });
+customerSchema.index({ custNo: 1 });
+accountSchema.index({ companyId: 1 });
+accountSchema.index({ customerId: 1 });
+accountSchema.index({ accNo: 1 });
+transactionSchema.index({ companyId: 1 });
+transactionSchema.index({ accId: 1 });
+transactionSchema.index({ secAccId: 1 });
+transactionSchema.index({ date: -1 });
+transactionSchema.index({ type: 1 });
+groupSchema.index({ companyId: 1 });
+accountTypeSchema.index({ companyId: 1 });
 
 const User = mongoose.model('User', userSchema);
 const Company = mongoose.model('Company', companySchema);
@@ -262,7 +283,10 @@ const requireSuperAdmin = (req, res, next) => {
 const injectTenantContext = async (req, res, next) => {
   const companyId = req.user.companyId;
   if (!companyId) return res.status(403).json({ message: 'No company context for this user' });
-  await initTenantData(companyId);
+  if (!tenantInitCache.has(companyId)) {
+    await initTenantData(companyId);
+    tenantInitCache.add(companyId);
+  }
   next();
 };
 
@@ -375,15 +399,12 @@ app.post('/api/auth/login', async (req, res) => {
 // --- SUPER ADMIN ROUTES ---
 app.get('/api/admin/companies', authenticate, requireSuperAdmin, async (req, res) => {
   try {
-    const companies = await Company.find().lean();
-    const result = await Promise.all(companies.map(async c => {
-      const owner = await User.findById(c.ownerId);
-      return { 
-        ...c, 
-        id: c._id.toString(),
-        username: owner ? owner.username : '',
-        password: owner ? owner.password : '' 
-      };
+    const companies = await Company.find().populate('ownerId', 'username password').lean();
+    const result = companies.map((c) => ({
+      ...c,
+      id: c._id.toString(),
+      username: c.ownerId ? c.ownerId.username : '',
+      password: c.ownerId ? c.ownerId.password : ''
     }));
     res.json(result);
   } catch (err) {
@@ -394,9 +415,13 @@ app.get('/api/admin/companies', authenticate, requireSuperAdmin, async (req, res
 app.get('/api/admin/agents', authenticate, requireSuperAdmin, async (req, res) => {
   try {
     const agents = await User.find({ role: 'agent' }).lean();
-    const result = await Promise.all(agents.map(async a => {
-      const company = await Company.findById(a.companyId);
-      return { ...a, id: a._id.toString(), companyName: company ? company.name : 'Unknown' };
+    const companyIds = [...new Set(agents.filter(a => a.companyId).map(a => a.companyId))];
+    const companies = await Company.find({ _id: { $in: companyIds } }).lean();
+    const companyMap = companies.reduce((map, c) => ({ ...map, [c._id.toString()]: c.name }), {});
+    const result = agents.map((a) => ({
+      ...a,
+      id: a._id.toString(),
+      companyName: companyMap[a.companyId] || 'Unknown'
     }));
     res.json(result);
   } catch (err) {
