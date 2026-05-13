@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { Toaster, toast } from 'react-hot-toast';
@@ -1484,7 +1484,7 @@ const AdjustmentEntryForm = ({ onSuccess, onClose, accounts, initialData }) => {
   );
 };
 
-const TransactionsPage = ({ user, companyProfile }) => {
+const TransactionsPage = React.memo(({ user, companyProfile }) => {
   const location = useLocation();
   const [txs, setTxs] = useState([]);
   const [accounts, setAccounts] = useState([]);
@@ -1498,6 +1498,8 @@ const TransactionsPage = ({ user, companyProfile }) => {
   
   const [previewTx, setPreviewTx] = useState(null);
   const [previewAcc, setPreviewAcc] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   const [formData, setFormData] = useState({ 
     accId: '', 
@@ -1509,17 +1511,27 @@ const TransactionsPage = ({ user, companyProfile }) => {
   });
 
   const fetchData = async () => {
-    const [tRes, aRes] = await Promise.all([api.get('/transactions'), api.get('/accounts')]);
-    setTxs(tRes.data);
-    setAccounts(aRes.data);
-    
-    if (location.state?.accNo) {
-      const targetAcc = aRes.data.find(a => a.accNo === location.state.accNo);
-      if (targetAcc) {
-        setSelectedAcc(targetAcc);
-        setFormData(prev => ({ ...prev, accId: targetAcc.id }));
-        setShowAdd(true);
+    try {
+      setLoading(true);
+      setError(null);
+      const [tRes, aRes] = await Promise.all([cachedApiGet('/transactions'), cachedApiGet('/accounts')]);
+      setTxs(tRes.data);
+      setAccounts(aRes.data);
+      
+      if (location.state?.accNo) {
+        const targetAcc = aRes.data.find(a => a.accNo === location.state.accNo);
+        if (targetAcc) {
+          setSelectedAcc(targetAcc);
+          setFormData(prev => ({ ...prev, accId: targetAcc.id }));
+          setShowAdd(true);
+        }
       }
+    } catch (err) {
+      console.error('Error fetching data:', err);
+      setError(err.message || 'Failed to load data');
+      toast.error('Failed to load transactions and accounts');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -1608,7 +1620,7 @@ const TransactionsPage = ({ user, companyProfile }) => {
     setSearchTerm('');
   };
 
-  const filteredTxs = txs.filter(tx => {
+  const filteredTxs = useMemo(() => txs.filter(tx => {
     const acc = accounts.find(a => a.id === tx.accId);
     const date = tx.date.split('T')[0];
     const matchesSearch = 
@@ -1619,7 +1631,36 @@ const TransactionsPage = ({ user, companyProfile }) => {
     const matchesDate = (!historyFrom || date >= historyFrom) && (!historyTo || date <= historyTo);
     
     return matchesSearch && matchesDate;
-  }).sort((a, b) => new Date(b.date) - new Date(a.date));
+  }).sort((a, b) => new Date(b.date) - new Date(a.date)), [txs, accounts, historySearch, historyFrom, historyTo]);
+
+  if (loading) {
+    return (
+      <div className="bg-[#f0f2f5] min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <RefreshCw size={48} className="animate-spin text-indigo-600 mx-auto mb-4" />
+          <p className="text-slate-600 font-bold">Loading transactions...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="bg-[#f0f2f5] min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <XCircle size={48} className="text-red-600 mx-auto mb-4" />
+          <p className="text-red-600 font-bold mb-4">Error loading data</p>
+          <p className="text-slate-500">{error}</p>
+          <button 
+            onClick={fetchData} 
+            className="mt-4 bg-indigo-600 text-white px-4 py-2 rounded hover:bg-indigo-700"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-[#f0f2f5] min-h-screen p-4 sm:p-6 md:p-8 max-w-7xl mx-auto">
@@ -1811,7 +1852,8 @@ const TransactionsPage = ({ user, companyProfile }) => {
   <LoadingButton
     onClick={handleEntry} // Pass the main function directly
     loadingText={editId ? 'Updating...' : 'Saving...'}
-    successMessage={editId ? "Voucher Updated" : "Voucher Saved Successfully"}
+    showToast={false}
+    // successMessage={editId ? "Voucher Updated" : "Voucher Saved Successfully"}
     className="bg-[#2980b9] hover:bg-[#3498db] text-white font-black px-8 py-2.5 rounded shadow-md"
   >
     <Check size={18} /> SAVE
@@ -1930,7 +1972,7 @@ const TransactionsPage = ({ user, companyProfile }) => {
 
       <ReceiptModal 
         isOpen={!!previewTx} 
-        onClose={() => setPreviewTx(null)} 
+        onClose={() => { setPreviewTx(null); setPreviewAcc(null); }} 
         tx={previewTx} 
         acc={previewAcc} 
         companyProfile={companyProfile}
@@ -1938,7 +1980,7 @@ const TransactionsPage = ({ user, companyProfile }) => {
       />
     </div>
   );
-};
+});
 
 
 

@@ -42,6 +42,9 @@ async function connectDB() {
     console.log('Connecting to MongoDB...');
     await mongoose.connect(MONGODB_URI, {
       serverSelectionTimeoutMS: 5000,
+      maxPoolSize: 10, // Connection pooling
+      serverSelectionTimeoutMS: 5000,
+      socketTimeoutMS: 45000,
     });
     console.log(`Connected to MongoDB in ${Date.now() - startDb}ms`);
     await seedAdmin();
@@ -349,7 +352,7 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(401).json({ message: 'Invalid username' });
     }
 
-    if (!bcrypt.compareSync(password, user.password)) {
+    if (!(await bcrypt.compare(password, user.password))) {
       return res.status(401).json({ message: 'Invalid password' });
     }
 
