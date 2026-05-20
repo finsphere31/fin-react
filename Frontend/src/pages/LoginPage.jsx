@@ -8,10 +8,32 @@ export default function LoginPage() {
   const { login, isLoading } = useAuth();
   const [form, setForm] = useState({ email: '', password: '' });
   const [error, setError] = useState('');
+  const [connectionTested, setConnectionTested] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState('idle'); // idle, testing, success, failed
 
   const handleChange = (event) => {
     const { name, value } = event.target;
     setForm((current) => ({ ...current, [name]: value }));
+  };
+
+  const testConnection = async () => {
+    setConnectionStatus('testing');
+    try {
+      console.log('[LoginPage] Testing backend connection...');
+      const response = await fetch('http://localhost:4000/health');
+      if (response.ok) {
+        const data = await response.json();
+        console.log('[LoginPage] Backend connection successful:', data);
+        setConnectionStatus('success');
+        setConnectionTested(true);
+      } else {
+        console.error('[LoginPage] Backend returned:', response.status);
+        setConnectionStatus('failed');
+      }
+    } catch (err) {
+      console.error('[LoginPage] Backend connection failed:', err.message);
+      setConnectionStatus('failed');
+    }
   };
 
   const handleSubmit = async (event) => {
@@ -19,10 +41,14 @@ export default function LoginPage() {
     setError('');
 
     try {
+      console.log('[LoginPage] Submitting login...');
       await login(form);
+      console.log('[LoginPage] Login successful, navigating to dashboard');
       navigate('/dashboard');
     } catch (err) {
-      setError('Unable to sign in. Check your credentials or backend connection.');
+      console.error('[LoginPage] Login error:', err);
+      const errorMsg = err.response?.data?.message || err.message || 'Unable to sign in';
+      setError(`${errorMsg}. Make sure backend is running on http://localhost:4000`);
     }
   };
 
@@ -60,7 +86,11 @@ export default function LoginPage() {
             />
           </label>
 
-          {error ? <p className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</p> : null}
+          {error ? (
+            <p className="rounded-2xl bg-rose-50 px-4 py-3 text-sm text-rose-700">
+              {error}
+            </p>
+          ) : null}
 
           <LoadingButton
             type="submit"
@@ -73,9 +103,29 @@ export default function LoginPage() {
           </LoadingButton>
         </form>
 
-        <div className="mt-6 rounded-3xl bg-slate-50 p-4 text-sm text-slate-600">
-          <p className="font-semibold text-slate-800">Demo login</p>
-          <p className="mt-2">Use any email and password for now. The backend is scaffolded to accept login requests.</p>
+        <div className="mt-6 space-y-4">
+          <div className="rounded-3xl bg-slate-50 p-4 text-sm text-slate-600">
+            <p className="font-semibold text-slate-800">Demo login</p>
+            <p className="mt-2">Use any email and password for now. The backend accepts all login requests.</p>
+          </div>
+
+          <button
+            type="button"
+            onClick={testConnection}
+            className={`w-full rounded-3xl px-4 py-3 text-sm font-semibold transition ${
+              connectionStatus === 'success'
+                ? 'border border-emerald-200 bg-emerald-50 text-emerald-700'
+                : connectionStatus === 'failed'
+                  ? 'border border-rose-200 bg-rose-50 text-rose-700'
+                  : 'border border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-200'
+            }`}
+            disabled={connectionStatus === 'testing'}
+          >
+            {connectionStatus === 'testing' && 'Testing connection...'}
+            {connectionStatus === 'idle' && '✓ Test Backend Connection'}
+            {connectionStatus === 'success' && '✓ Backend is running'}
+            {connectionStatus === 'failed' && '✗ Backend is not responding'}
+          </button>
         </div>
       </div>
     </div>
